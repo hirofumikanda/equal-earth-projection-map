@@ -106,7 +106,7 @@ const dataTileGrid = new TileGrid({
 // PMTiles
 // --------------------------------------------------
 
-const archive = new PMTiles('/countries.pmtiles');
+const archive = new PMTiles(`${import.meta.env.BASE_URL}countries.pmtiles`);
 
 
 // --------------------------------------------------
