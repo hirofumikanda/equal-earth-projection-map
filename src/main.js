@@ -3,7 +3,11 @@ import View from 'ol/View.js';
 
 import MVT from 'ol/format/MVT.js';
 
+import Feature from 'ol/Feature.js';
+import Polygon from 'ol/geom/Polygon.js';
+import VectorLayer from 'ol/layer/Vector.js';
 import VectorTileLayer from 'ol/layer/VectorTile.js';
+import VectorSource from 'ol/source/Vector.js';
 import VectorTileSource from 'ol/source/VectorTile.js';
 
 import TileGrid from 'ol/tilegrid/TileGrid.js';
@@ -228,6 +232,40 @@ const countriesLayer = new VectorTileLayer({
   },
 });
 
+const tileBoundarySource = new VectorSource();
+
+const tileBoundaryStyle = new Style({
+  stroke: new Stroke({
+    color: 'red',
+    width: 1,
+  }),
+
+  text: new Text({
+    font: '20px sans-serif',
+
+    fill: new Fill({
+      color: 'red',
+    }),
+
+    stroke: new Stroke({
+      color: '#fff',
+      width: 4,
+    }),
+  }),
+});
+
+const tileBoundaryLayer = new VectorLayer({
+  source: tileBoundarySource,
+
+  style(feature) {
+    tileBoundaryStyle
+      .getText()
+      .setText(`${feature.get('z')}/${feature.get('x')}/${feature.get('y')}`);
+
+    return tileBoundaryStyle;
+  },
+});
+
 
 // --------------------------------------------------
 // Map
@@ -290,6 +328,7 @@ const map = new Map({
 
   layers: [
     countriesLayer,
+    tileBoundaryLayer,
   ],
 
   view: new View({
@@ -304,13 +343,60 @@ const map = new Map({
 
     // Equal Earthの実世界範囲より外へ
     // パンし過ぎないようにする
-    extent: projectionExtent,
+    // extent: projectionExtent,
   }),
 });
 
+function updateTileBoundaries() {
+  const view = map.getView();
+  const resolution = view.getResolution();
+  const size = map.getSize();
+
+  if (resolution === undefined || !size) {
+    return;
+  }
+
+  const z = dataTileGrid.getZForResolution(resolution, 1);
+  const viewExtent = view.calculateExtent(size);
+  const tileRange = dataTileGrid.getTileRangeForExtentAndZ(
+    viewExtent,
+    z,
+  );
+  const features = [];
+
+  for (let x = tileRange.minX; x <= tileRange.maxX; x++) {
+    for (let y = tileRange.minY; y <= tileRange.maxY; y++) {
+      const [minX, minY, maxX, maxY] = dataTileGrid.getTileCoordExtent([
+        z,
+        x,
+        y,
+      ]);
+
+      const feature = new Feature(
+        new Polygon([[
+          [minX, minY],
+          [minX, maxY],
+          [maxX, maxY],
+          [maxX, minY],
+          [minX, minY],
+        ]]),
+      );
+
+      feature.setProperties({z, x, y});
+      features.push(feature);
+    }
+  }
+
+  tileBoundarySource.clear(true);
+  tileBoundarySource.addFeatures(features);
+}
+
 map.on('moveend', () => {
   writeViewToHash(map.getView());
+  updateTileBoundaries();
 });
+
+map.on('change:size', updateTileBoundaries);
 
 window.addEventListener('hashchange', () => {
   const nextView = readViewFromHash();
@@ -325,6 +411,7 @@ window.addEventListener('hashchange', () => {
 });
 
 writeViewToHash(map.getView());
+updateTileBoundaries();
 
 
 // --------------------------------------------------
